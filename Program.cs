@@ -185,7 +185,7 @@ namespace nanoFrameworkFlasher
             foreach (String peItem in peFiles)
             {
                 // append to the deploy blob the assembly
-                using (FileStream fs = File.Open(Path.Combine(workingDirectory, peItem), FileMode.Open, FileAccess.Read))
+                using (FileStream fs = File.Open(peItem, FileMode.Open, FileAccess.Read))
                 {
                     long length = (fs.Length + 3) / 4 * 4;
                     _message.Verbose($"Adding {peItem} v0 ({length} bytes) to deployment bundle");
