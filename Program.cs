@@ -17,6 +17,7 @@ namespace nanoFrameworkFlasher
         private static CommandlineOptions _options;
         private static MessageHelper _message;
         private static int _returnvalue;
+        private static NanoDeviceBase _device;
 
         internal static int Main(string[] args)
         {
@@ -33,6 +34,10 @@ namespace nanoFrameworkFlasher
             }
 
             Console.WriteLine($"Exit with return code {_returnvalue}");
+
+            // Force clean
+            _device.Disconnect(true);
+            _device = null;
 
             return _returnvalue;
         }
@@ -52,6 +57,7 @@ namespace nanoFrameworkFlasher
             _message = new MessageHelper(_options);
             string[] peFiles;
             string workingDirectory;
+            List<string> excludedPorts = null;
 
             // Let's first validate that the directory exist and contains PE files
             _options.PeDirectory = $"{_options.PeDirectory}{Path.DirectorySeparatorChar}";
@@ -73,12 +79,30 @@ namespace nanoFrameworkFlasher
                 return;
             }
 
+            // Now we will check if there is any exclude file, open it and get the ports
+            if(!string.IsNullOrEmpty(_options.PortException))
+            {
+                if(File.Exists(_options.PortException))
+                {
+                    var ports = File.ReadAllLines(_options.PortException);
+                    if (ports.Length > 0)
+                    {
+                        excludedPorts = new List<string>();
+                        excludedPorts.AddRange(ports);
+                    }
+                }
+                else
+                {
+                    _message.Error("Exclusion file doesn't exist. Continuing as this error is not critical.");
+                }
+            }
+
             _message.Verbose("Finding valid ports");
 
             List<byte[]> assemblies = new List<byte[]>();
             int retryCount = 0;
             _numberOfRetries = 10;
-            var serialDebugClient = PortBase.CreateInstanceForSerial(true, null);
+            var serialDebugClient = PortBase.CreateInstanceForSerial(true, excludedPorts);
 
         retryConnection:
             while (!serialDebugClient.IsDevicesEnumerationComplete)
@@ -106,29 +130,29 @@ namespace nanoFrameworkFlasher
             }
 
             retryCount = 0;
-            NanoDeviceBase device = serialDebugClient.NanoFrameworkDevices[0];
+            _device = serialDebugClient.NanoFrameworkDevices[0];
 
             // In case we have multiple ones, we will go for the one passed if the argument is valid
             if ((serialDebugClient.NanoFrameworkDevices.Count > 1) && (!string.IsNullOrEmpty(_options.ComPort)))
             {
-                device = serialDebugClient.NanoFrameworkDevices.Where(m => m.SerialNumber == _options.ComPort).First();
+                _device = serialDebugClient.NanoFrameworkDevices.Where(m => m.SerialNumber == _options.ComPort).First();
             }
             else
             {
-                device = serialDebugClient.NanoFrameworkDevices[0];
+                _device = serialDebugClient.NanoFrameworkDevices[0];
             }
 
-            _message.Output($"Deploying on {device.Description}");
+            _message.Output($"Deploying on {_device.Description}");
 
             // check if debugger engine exists
-            if (device.DebugEngine == null)
+            if (_device.DebugEngine == null)
             {
-                device.CreateDebugEngine();
+                _device.CreateDebugEngine();
                 _message.Verbose($"Debug engine created.");
             }
 
         retryDebug:
-            bool connectResult = device.DebugEngine.Connect(5000, true, true);
+            bool connectResult = _device.DebugEngine.Connect(5000, true, true);
             _message.Output($"Device connect result is {connectResult}. Attempt {retryCount}/{_numberOfRetries}");
 
             if (!connectResult)
@@ -152,7 +176,7 @@ namespace nanoFrameworkFlasher
             // erase the device
             _message.Output($"Erase deployment block storage. Attempt {retryCount}/{_numberOfRetries}.");
 
-            var eraseResult = device.Erase(
+            var eraseResult = _device.Erase(
                     EraseOptions.Deployment,
                     null,
                     null);
@@ -207,7 +231,7 @@ namespace nanoFrameworkFlasher
             var deploymentLogger = new Progress<string>((m) => _message.Output(m));
             // Seems to be needed for slow devices
             Thread.Sleep(200);
-            if (!device.DebugEngine.DeploymentExecute(
+            if (!_device.DebugEngine.DeploymentExecute(
                 assemblyCopy,
                 _options.RebootAfterFlash,
                 false,
