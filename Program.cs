@@ -18,6 +18,7 @@ namespace nanoFrameworkFlasher
         private static MessageHelper _message;
         private static int _returnvalue;
         private static NanoDeviceBase _device;
+        private static PortBase _serialDebugClient;
 
         internal static int Main(string[] args)
         {
@@ -36,7 +37,8 @@ namespace nanoFrameworkFlasher
             Console.WriteLine($"Exit with return code {_returnvalue}");
 
             // Force clean
-            _device.Disconnect(true);
+            _serialDebugClient?.StopDeviceWatchers();
+            _device?.Disconnect(true);
             _device = null;
 
             return _returnvalue;
@@ -102,17 +104,17 @@ namespace nanoFrameworkFlasher
             List<byte[]> assemblies = new List<byte[]>();
             int retryCount = 0;
             _numberOfRetries = 10;
-            var serialDebugClient = PortBase.CreateInstanceForSerial(true, excludedPorts);
+            _serialDebugClient = PortBase.CreateInstanceForSerial(true, excludedPorts);
 
         retryConnection:
-            while (!serialDebugClient.IsDevicesEnumerationComplete)
+            while (!_serialDebugClient.IsDevicesEnumerationComplete)
             {
                 Thread.Sleep(1);
             }
 
-            _message.Output($"Found: {serialDebugClient.NanoFrameworkDevices.Count} devices");
+            _message.Output($"Found: {_serialDebugClient.NanoFrameworkDevices.Count} devices");
 
-            if (serialDebugClient.NanoFrameworkDevices.Count == 0)
+            if (_serialDebugClient.NanoFrameworkDevices.Count == 0)
             {
                 if (retryCount > _numberOfRetries)
                 {
@@ -124,22 +126,22 @@ namespace nanoFrameworkFlasher
                 {
                     retryCount++;
                     _message.Verbose($"Finding devices, attempt {retryCount}");
-                    serialDebugClient.ReScanDevices();
+                    _serialDebugClient.ReScanDevices();
                     goto retryConnection;
                 }
             }
 
             retryCount = 0;
-            _device = serialDebugClient.NanoFrameworkDevices[0];
+            _device = _serialDebugClient.NanoFrameworkDevices[0];
 
             // In case we have multiple ones, we will go for the one passed if the argument is valid
-            if ((serialDebugClient.NanoFrameworkDevices.Count > 1) && (!string.IsNullOrEmpty(_options.ComPort)))
+            if ((_serialDebugClient.NanoFrameworkDevices.Count > 1) && (!string.IsNullOrEmpty(_options.ComPort)))
             {
-                _device = serialDebugClient.NanoFrameworkDevices.Where(m => m.SerialNumber == _options.ComPort).First();
+                _device = _serialDebugClient.NanoFrameworkDevices.Where(m => m.SerialNumber == _options.ComPort).First();
             }
             else
             {
-                _device = serialDebugClient.NanoFrameworkDevices[0];
+                _device = _serialDebugClient.NanoFrameworkDevices[0];
             }
 
             _message.Output($"Deploying on {_device.Description}");
